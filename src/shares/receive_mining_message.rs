@@ -25,10 +25,10 @@ use crate::{
     shares::ckpool_socket::{create_zmq_socket, start_receiving_from_ckpool, CkPoolSocket},
 };
 use std::error::Error;
+use std::sync::Arc;
 use std::thread;
 use tokio::sync::{mpsc, Semaphore};
 use tracing::{error, info};
-use std::sync::Arc;
 
 /// Receives messages from ckpool and sends them to the node asynchronously
 /// Each new message received starts a new tokio task
@@ -59,8 +59,9 @@ pub fn start_receiving_mining_messages<C: Send + 'static>(
                     continue;
                 }
             };
-            
-            let mining_message: CkPoolMessage = serde_json::from_value(mining_message_data).unwrap();
+
+            let mining_message: CkPoolMessage =
+                serde_json::from_value(mining_message_data).unwrap();
             info!("Received mining message deserialized: {:?}", mining_message);
 
             let chain_handle_clone = chain_handle.clone();
