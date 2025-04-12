@@ -26,12 +26,13 @@ use crate::{
 };
 use std::error::Error;
 use std::thread;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
 use tracing::{error, info};
+use std::sync::Arc;
 
 /// Receives messages from ckpool and sends them to the node asynchronously
 /// Each new message received starts a new tokio task
-/// TODO: Add limits to how many concurrent tasks are run
+/// The number of concurrent tasks is limited by max_concurrent_tasks in the config
 pub fn start_receiving_mining_messages<C: Send + 'static>(
     config: &Config,
     chain_handle: ChainHandle,
@@ -48,22 +49,35 @@ pub fn start_receiving_mining_messages<C: Send + 'static>(
         }
     });
     let miner_pubkey = config.miner.pubkey;
+    let semaphore = Arc::new(Semaphore::new(config.network.max_concurrent_tasks as usize));
     tokio::spawn(async move {
         while let Some(mining_message_data) = mining_message_rx.recv().await {
-            let mining_message: CkPoolMessage =
-                serde_json::from_value(mining_message_data).unwrap();
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(permit) => permit,
+                Err(e) => {
+                    error!("Failed to acquire semaphore: {}", e);
+                    continue;
+                }
+            };
+            
+            let mining_message: CkPoolMessage = serde_json::from_value(mining_message_data).unwrap();
             info!("Received mining message deserialized: {:?}", mining_message);
 
-            if let Err(e) = handle_mining_message::<C>(
-                mining_message,
-                chain_handle.clone(),
-                swarm_tx.clone(),
-                miner_pubkey,
-            )
-            .await
-            {
-                error!("Failed to handle mining message: {}", e);
-            }
+            let chain_handle_clone = chain_handle.clone();
+            let swarm_tx_clone = swarm_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = handle_mining_message::<C>(
+                    mining_message,
+                    chain_handle_clone,
+                    swarm_tx_clone,
+                    miner_pubkey,
+                )
+                .await
+                {
+                    error!("Failed to handle mining message: {}", e);
+                }
+                drop(permit); // Releases the semaphore permit
+            });
         }
     });
     Ok(())
