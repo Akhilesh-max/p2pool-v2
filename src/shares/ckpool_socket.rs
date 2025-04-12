@@ -118,13 +118,12 @@ fn receive_shares<S: CkPoolSocketTrait>(
     tx: tokio::sync::mpsc::Sender<Value>,
 ) -> Result<(), Box<dyn Error>> {
     if let Ok(Ok(json_str)) = socket.recv_string() {
+        info!("Mining message received. Length {}", json_str.len());
         match serde_json::from_str(&json_str) {
             Ok(json_value) => {
                 // Send the parsed JSON to the channel
                 if let Err(e) = tx.blocking_send(json_value) {
                     debug!("Failed to send share to channel: {}", e);
-                } else {
-                    debug!("Sent share to channel: {}", json_str);
                 }
             }
             Err(e) => {

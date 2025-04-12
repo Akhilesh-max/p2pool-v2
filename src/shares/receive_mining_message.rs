@@ -74,7 +74,7 @@ pub fn start_receiving_mining_messages<C: Send + 'static>(
                 )
                 .await
                 {
-                    error!("Failed to handle mining message: {}", e);
+                    error!("Failed .to handle mining message: {}", e);
                 }
                 drop(permit); // Releases the semaphore permit
             });
